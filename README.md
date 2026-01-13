@@ -1,70 +1,73 @@
-# Ministry of Justice Template Repository
+# Cloud Platform Integration Tests
 
 [![Ministry of Justice Repository Compliance Badge](https://github-community.service.justice.gov.uk/repository-standards/api/template-repository/badge)](https://github-community.service.justice.gov.uk/repository-standards/template-repository)
 
-This template repository equips you with the default initial files required for a Ministry of Justice GitHub repository.
+## Introduction
 
-## Included Files
+This repository contains integration tests for Cloud Platform CP3.0 clusters and components.
 
-The repository comes with the following preset files:
+## How to run Go tests
 
-- LICENSE
-- .gitignore
-- CODEOWNERS
-- dependabot.yml
-- GitHub Actions example files
-- Ministry of Justice Compliance Badge (public repositories only)
+To run the integration tests on a MoJ Cloud Platform cluster you must have the following tools installed:
 
-## Setup Instructions
+_TODO:_ (Tool versioning here notes here??)
 
-Once you've created your repository using this template, ensure the following steps:
+- [kubectl](https://kubernetes.io/docs/tasks/tools/)
+- [terraform](https://learn.hashicorp.com/tutorials/terraform/install-cli)
+- [aws-cli](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html)
+- [git](https://git-scm.com/book/en/v2/Getting-Started-Installing-Git)
+- [Go](https://go.dev/doc/install)
+- [Ginkgo v2](https://onsi.github.io/ginkgo/#installing-ginkgo)
 
-### Update README
+You can then either run:
 
-Edit this README.md file to document your project accurately. Take the time to create a clear, engaging, and informative README.md file. Include information like what your project does, how to install and run it, how to contribute, and any other pertinent details.
-
-### Update repository description
-
-After you've created your repository, GitHub provides a brief description field that appears on the top of your repository's main page. This is a summary that gives visitors quick insight into the project. Using this field to provide a succinct overview of your repository is highly recommended.
-
-This description and your README.md will be one of the first things people see when they visit your repository. It's a good place to make a strong, concise first impression. Remember, this is often visible in search results on GitHub and search engines, so it's also an opportunity to help people discover your project.
-
-### Grant Team Permissions
-
-Assign permissions to the appropriate Ministry of Justice teams. Ensure at least one team is granted Admin permissions. Whenever possible, assign permissions to teams rather than individual users.
-
-Prefer to user GitHub Teams over individual access to repositories. Where appropriate, ensure GitHub Teams used are related to a Parent Team associated with a Business Unit to help ensure ownership can be easily identified.
-
-### Read about the GitHub repository standards
-
-Familiarise yourself with the Ministry of Justice GitHub Repository Standards. These standards ensure consistency, maintainability, and best practices across all our repositories.
-
-You can find the standards [here](https://github-community.service.justice.gov.uk/repository-standards/guidance).
-
-Please read and understand these standards thoroughly and enable them when you feel comfortable.
-
-### Modify the GitHub Standards Badge
-
-Once you've ensured that all the [GitHub Repository Standards](https://github-community.service.justice.gov.uk/repository-standards/guidance) have been applied to your repository, it's time to update the Ministry of Justice (MoJ) Compliance Badge located in the README file.
-
-The badge demonstrates that your repository is compliant with MoJ's standards.
-
-To update the badge, replace the `template-repository` in the badge URL with your repository's name. The badge URL should look like this:
-
-```markdown
-[![Ministry of Justice Repository Compliance Badge](https://github-community.service.justice.gov.uk/repository-standards/api/${your-repository-name}/badge)](https://github-community.service.justice.gov.uk/repository-standards/${your-reposistory-name})
+```bash
+go test -v ./...
 ```
 
-**Please note** the badge will not function correctly if your repository is internal or private. In this case, you may remove the badge from your README.
+or
 
-### Update CODEOWNERS
+```bash
+cd test; ginkgo -r -v  # for realtime response
+```
 
-(Optional) Modify the CODEOWNERS file to specify the teams or users authorized to approve pull requests.
+### Running individual tests
 
-### Configure Dependabot
+A neat trick in Ginkgo is to place an "F" in front of the "Describe", "It" or "Context" functions. This marks it as [focused](https://onsi.github.io/ginkgo/#focused-specs).
 
-Adapt the dependabot.yml file to match your project's [dependency manager](https://docs.github.com/en/code-security/dependabot/dependabot-version-updates/configuration-options-for-the-dependabot.yml-file#package-ecosystem) and to enable [automated pull requests for package updates](https://docs.github.com/en/code-security/supply-chain-security).
+So, if you have spec like:
 
-### Dependency Review
+```
+    It("should be idempotent", func() {
+```
 
-If your repository is private with no GitHub Advanced Security license, remove the `.github/workflows/dependency-review.yml` file.
+You rewrite it as:
+
+```
+    FIt("should be idempotent", func() {
+```
+
+And it will run exactly that one spec:
+
+```
+[Fail] testing Migrate setCurrentDbVersion [It] should be idempotent
+...
+Ran 1 of 5 Specs in 0.003 seconds
+FAIL! -- 0 Passed | 1 Failed | 0 Pending | 4 Skipped
+```
+
+### Making changes to Ginkgo tests
+
+Ginkgo works best from the command-line, and [ginkgo watch](https://onsi.github.io/ginkgo/#watching-for-changes) makes it easy to rerun tests on the command line whenever changes are detected.
+
+## How to update Go dependencies
+
+With the repository cloned:
+
+```bash
+cd test; go get -u ./...
+```
+
+Perform the tests as outlined [above](#how-to-run-go-tests) and confirm they pass.
+
+Create a PR and merge to main.
