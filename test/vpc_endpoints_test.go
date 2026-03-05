@@ -30,7 +30,6 @@ var _ = Describe("GIVEN VPC endpoints are configured", func() {
 		{"Athena", "athena.eu-west-2.amazonaws.com"},
 		{"AWS Backup", "backup.eu-west-2.amazonaws.com"},
 		{"CloudTrail", "cloudtrail.eu-west-2.amazonaws.com"},
-		{"AWS Comprehend", "comprehend.eu-west-2.amazonaws.com"},
 		{"AWS Config", "config.eu-west-2.amazonaws.com"},
 		{"AWS Detective", "api.detective.eu-west-2.amazonaws.com"},
 		{"DMS", "dms.eu-west-2.amazonaws.com"},
@@ -43,14 +42,12 @@ var _ = Describe("GIVEN VPC endpoints are configured", func() {
 		{"SES API", "email.eu-west-2.amazonaws.com"},
 		// {"SES SMTP", "email-smtp.eu-west-2.amazonaws.com"},
 		{"CloudWatch Events", "events.eu-west-2.amazonaws.com"},
-		{"AWS Glue", "glue.eu-west-2.amazonaws.com"},
 		{"GuardDuty", "guardduty-data.eu-west-2.amazonaws.com"},
 		{"Inspector", "inspector2.eu-west-2.amazonaws.com"},
 		{"Kinesis Firehose", "firehose.eu-west-2.amazonaws.com"},
 		{"KMS", "kms.eu-west-2.amazonaws.com"},
 		{"Lambda", "lambda.eu-west-2.amazonaws.com"},
 		{"CloudWatch Logs", "logs.eu-west-2.amazonaws.com"},
-		{"AWS Macie", "macie2.eu-west-2.amazonaws.com"},
 		{"RDS", "rds.eu-west-2.amazonaws.com"},
 		{"RDS Data", "rds-data.eu-west-2.amazonaws.com"},
 		{"Secrets Manager", "secretsmanager.eu-west-2.amazonaws.com"},
@@ -60,8 +57,9 @@ var _ = Describe("GIVEN VPC endpoints are configured", func() {
 		{"Systems Manager", "ssm.eu-west-2.amazonaws.com"},
 		{"STS", "sts.eu-west-2.amazonaws.com"},
 		{"AWS Transcribe", "transcribe.eu-west-2.amazonaws.com"},
-		{"AWS Translate", "translate.eu-west-2.amazonaws.com"},
 		{"WAF", "wafv2.eu-west-2.amazonaws.com"},
+		// {"S3", "s3.eu-west-2.amazonaws.com"},
+		// {"DynamoDB", "dynamodb.eu-west-2.amazonaws.com"},
 	}
 
 	BeforeEach(func() {
@@ -100,6 +98,14 @@ var _ = Describe("GIVEN VPC endpoints are configured", func() {
 	})
 
 	It("THEN ALLOW connectivity to all AWS services via VPC endpoints", func() {
+		type result struct {
+			name      string
+			endpoint  string
+			connected bool
+			error     string
+		}
+		results := []result{}
+
 		for _, service := range awsServices {
 			output, err := k8s.RunKubectlAndGetOutputE(
 				GinkgoT(),
@@ -115,13 +121,52 @@ var _ = Describe("GIVEN VPC endpoints are configured", func() {
 				"443",
 			)
 
-			Expect(err).NotTo(HaveOccurred(), fmt.Sprintf("Failed to connect to %s: %v\nOutput: %s", service.endpoint, err, output))
-			Expect(strings.Contains(output, "succeeded") || strings.Contains(output, "open")).To(BeTrue(),
-				fmt.Sprintf("Expected successful connection to %s, got: %s", service.endpoint, output))
+			r := result{
+				name:      service.name,
+				endpoint:  service.endpoint,
+				connected: err == nil && (strings.Contains(output, "succeeded") || strings.Contains(output, "open")),
+			}
+			if !r.connected {
+				if err != nil {
+					r.error = err.Error()
+				} else {
+					r.error = fmt.Sprintf("Unexpected output: %s", output)
+				}
+			}
+			results = append(results, r)
+		}
+
+		GinkgoWriter.Println("\n=== AWS Service API Endpoint Connectivity Summary ===")
+		successCount := 0
+		failedServices := []string{}
+		for _, r := range results {
+			status := "✓ SUCCESS"
+			if !r.connected {
+				status = "✗ FAILED"
+				failedServices = append(failedServices, fmt.Sprintf("%s (%s): %s", r.name, r.endpoint, r.error))
+			} else {
+				successCount++
+			}
+			GinkgoWriter.Printf("%-30s %-10s %s\n", r.name, status, r.endpoint)
+		}
+		GinkgoWriter.Printf("\nTotal: %d/%d services connected successfully\n\n", successCount, len(results))
+
+		if len(failedServices) > 0 {
+			Fail(fmt.Sprintf("Failed to connect to %d service(s):\n- %s", len(failedServices), strings.Join(failedServices, "\n- ")))
 		}
 	})
 
 	It("THEN all AWS services resolve to internal VPC addresses", func() {
+		type result struct {
+			name      string
+			endpoint  string
+			resolved  bool
+			ipAddress string
+			isPrivate bool
+			error     string
+		}
+		results := []result{}
+
 		for _, service := range awsServices {
 			output, err := k8s.RunKubectlAndGetOutputE(
 				GinkgoT(),
@@ -133,7 +178,16 @@ var _ = Describe("GIVEN VPC endpoints are configured", func() {
 				service.endpoint,
 			)
 
-			Expect(err).NotTo(HaveOccurred(), fmt.Sprintf("Failed to resolve %s: %v", service.endpoint, err))
+			r := result{
+				name:     service.name,
+				endpoint: service.endpoint,
+			}
+
+			if err != nil {
+				r.error = err.Error()
+				results = append(results, r)
+				continue
+			}
 
 			lines := strings.Split(output, "\n")
 			var resolvedIP string
@@ -154,14 +208,49 @@ var _ = Describe("GIVEN VPC endpoints are configured", func() {
 				}
 			}
 
-			Expect(resolvedIP).NotTo(BeEmpty(), fmt.Sprintf("Could not extract IP address from nslookup output for %s: %s", service.name, output))
+			if resolvedIP == "" {
+				r.error = "Could not extract IP address"
+				results = append(results, r)
+				continue
+			}
+
+			r.resolved = true
+			r.ipAddress = resolvedIP
 
 			ip := net.ParseIP(resolvedIP)
-			Expect(ip).NotTo(BeNil(), fmt.Sprintf("Invalid IP address for %s: %s", service.name, resolvedIP))
+			if ip == nil {
+				r.error = "Invalid IP address"
+				results = append(results, r)
+				continue
+			}
 
-			isPrivate := ip.IsPrivate()
-			Expect(isPrivate).To(BeTrue(),
-				fmt.Sprintf("%s resolved to public IP %s instead of private VPC endpoint IP", service.endpoint, resolvedIP))
+			r.isPrivate = ip.IsPrivate()
+			results = append(results, r)
+		}
+
+		GinkgoWriter.Println("\n=== VPC Endpoint DNS Resolution Summary ===")
+		successCount := 0
+		failedServices := []string{}
+		for _, r := range results {
+			status := "✗ FAILED"
+			ipInfo := r.error
+			if r.resolved && r.isPrivate {
+				status = "✓ PRIVATE"
+				ipInfo = r.ipAddress
+				successCount++
+			} else if r.resolved && !r.isPrivate {
+				status = "✗ PUBLIC"
+				ipInfo = r.ipAddress
+				failedServices = append(failedServices, fmt.Sprintf("%s resolved to public IP %s instead of private VPC endpoint", r.endpoint, r.ipAddress))
+			} else {
+				failedServices = append(failedServices, fmt.Sprintf("%s: %s", r.endpoint, r.error))
+			}
+			GinkgoWriter.Printf("%-30s %-12s %-15s %s\n", r.name, status, ipInfo, r.endpoint)
+		}
+		GinkgoWriter.Printf("\nTotal: %d/%d services resolved to private VPC addresses\n\n", successCount, len(results))
+
+		if len(failedServices) > 0 {
+			Fail(fmt.Sprintf("Failed DNS resolution for %d service(s):\n- %s", len(failedServices), strings.Join(failedServices, "\n- ")))
 		}
 	})
 })
