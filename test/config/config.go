@@ -50,17 +50,18 @@ func NewConfig(clusterName string, services []string, daemonsets []string, servi
 
 // SetClusterName is a setter method to define the name of the cluster to work on.
 func (c *Config) SetClusterName(cluster string) error {
-	if cluster == "" {
-		nodes, err := c.Client.Clientset.CoreV1().Nodes().List(context.Background(), metav1.ListOptions{})
-		if err != nil {
-			return fmt.Errorf("unable to fetch node name: %e", err)
-		}
-
-		clusterName := nodes.Items[0].Labels["Cluster"]
-
-		// All Cloud Platform clusters are tagged with the label Cluster=<ClusterName>.
-		c.ClusterName = clusterName
+	if cluster != "" {
+		c.ClusterName = cluster
+		return nil
 	}
+
+	nodes, err := c.Client.Clientset.CoreV1().Nodes().List(context.Background(), metav1.ListOptions{})
+	if err != nil {
+		return fmt.Errorf("unable to fetch node name: %w", err)
+	}
+
+	// All Cloud Platform clusters are tagged with the label Cluster=<ClusterName>.
+	c.ClusterName = nodes.Items[0].Labels["Cluster"]
 
 	if c.ClusterName != "" {
 		return nil
