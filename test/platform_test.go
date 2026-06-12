@@ -41,7 +41,8 @@ func TestMain(m *testing.M) {
 
 	client, err := client.NewKubeClientWithValues(*kubeconfig, "")
 	if err != nil {
-		Fail(fmt.Sprintf("Failed to create kube client: %v", err))
+		fmt.Fprintf(os.Stderr, "Failed to create kube client: %v\n", err)
+		os.Exit(1)
 	}
 
 	c = config.Config{
@@ -51,7 +52,8 @@ func TestMain(m *testing.M) {
 
 	err = c.SetClusterName(*cluster)
 	if err != nil {
-		Fail(fmt.Sprintf("Failed to set cluster name: %s", err))
+		fmt.Fprintf(os.Stderr, "Failed to set cluster name: %s\n", err)
+		os.Exit(1)
 	}
 
 	// Run tests
@@ -62,7 +64,8 @@ func TestMain(m *testing.M) {
 	// I can't use AfterSuite here because it doesn't handle parallel tests.
 	defer func() {
 		if err := c.Cleanup(); err != nil {
-			Fail(fmt.Sprintf("Failed to cleanup: %s", err))
+			fmt.Fprintf(os.Stderr, "Failed to cleanup: %s\n", err)
+			os.Exit(1)
 		}
 	}()
 
